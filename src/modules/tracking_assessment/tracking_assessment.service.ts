@@ -298,31 +298,13 @@ export class TrackingAssessmentService {
             showFlag: true,
           },
           order: {
-            totalScore: 'DESC',
+            createdOn: 'DESC',
           },
         });
-        const axl_accuracysupported_games =['letterHunt']
-        if (!axl_accuracysupported_games.includes(createAssessmentTrackingDto.courseId.toString())) {
-          if (existingRecord) {
-            if (
-              existingRecord.totalScore <= createAssessmentTrackingDto.totalScore
-            ) {
-              //update same record with shoefla as false and new record with showfla true
-              let updateRecord = {
-                ...existingRecord,
-                showFlag: false,
-              };
-              await this.assessmentTrackingRepository.save(updateRecord);
-              createAssessmentTrackingDto.showFlag = true;
-            } else {
-              createAssessmentTrackingDto.showFlag = false;
-            }
-          }
-          else {
-            createAssessmentTrackingDto.showFlag = true;
-          }
+        if (existingRecord) {
+          createAssessmentTrackingDto.showFlag = await this.updateShowFlag(existingRecord, createAssessmentTrackingDto);
         } else {
-          createAssessmentTrackingDto.showFlag = existingRecord ? await this.updateaxlaccuracyRecords(existingRecord,createAssessmentTrackingDto) : true;
+          createAssessmentTrackingDto.showFlag = true;
         }
 
         result = await this.assessmentTrackingRepository.save(
@@ -404,20 +386,22 @@ export class TrackingAssessmentService {
     }
   }
 
-  public async updateaxlaccuracyRecords(existingRecord,createAssessmentTrackingDto: CreateAssessmentTrackingDto) {
-    let existingAccuracy = (existingRecord.totalScore<=existingRecord.totalMaxScore)? existingRecord.totalScore / existingRecord.totalMaxScore : existingRecord.totalMaxScore / existingRecord.totalScore;
-    let newAccuracy = createAssessmentTrackingDto.totalMaxScore / createAssessmentTrackingDto.totalScore;
-    if (existingAccuracy <= newAccuracy ) {
-      //update same record with shoefla as false and new record with showfla true
-      let updateRecord = {
-        ...existingRecord,
-        showFlag: false,
-      };
+  public async updateShowFlag(existingRecord: any, createAssessmentTrackingDto: CreateAssessmentTrackingDto): Promise<boolean> {
+    const existingAccuracy = this.calculateAccuracy(existingRecord);
+    const newAccuracy = this.calculateAccuracy(createAssessmentTrackingDto);
+
+    if (existingAccuracy <= newAccuracy) {
+      let updateRecord = { ...existingRecord, showFlag: false };
       await this.assessmentTrackingRepository.save(updateRecord);
       return true;
-    } else {
-      return false;
     }
+    return false;
+  }
+
+  public calculateAccuracy(record: any): number {
+    return record.totalScore <= record.totalMaxScore
+      ? record.totalScore / record.totalMaxScore
+      : record.totalMaxScore / record.totalScore;
   }
 
   public async updateAssessmentTracking(
