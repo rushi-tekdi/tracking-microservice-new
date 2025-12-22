@@ -66,11 +66,13 @@ export class UserCertificateController {
       request,
     );
   }
+
   @ApiOkResponse({
     description: 'Users status for courses fetched successfully',
   })
   @ApiInternalServerErrorResponse({ description: 'Internal Server Error.' })
   @ApiBadRequestResponse({ description: 'Bad Request.' })
+  @UseGuards(TenantGuard)
   @Post('status/search')
   async searchUsersCourses(
     @Body() searchObj: Record<string, any>,
@@ -83,6 +85,7 @@ export class UserCertificateController {
       request,
     );
   }
+  
   //import user importUserDataForCertificate
   @ApiOkResponse({ description: 'User added for course successfully' })
   @ApiInternalServerErrorResponse({ description: 'Internal Server Error.' })

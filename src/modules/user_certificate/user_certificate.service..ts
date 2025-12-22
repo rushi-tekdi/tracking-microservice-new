@@ -194,13 +194,20 @@ export class UserCertificateService {
     }
   }
   async searchUsersCourses(searchObj, response, request) {
-    const filters = searchObj.filters;
+    const filters = searchObj.filters || {};
     let apiId = 'api.get.searchList';
+    // Extract tenantId from request (validated by TenantGuard)
+    const tenantId = request.tenantId;
     try {
       const queryBuilder =
         this.userCourseCertificateRepository.createQueryBuilder(
           'UserCourseCertificate',
         );
+
+      // Always filter by tenantId from header
+      queryBuilder.andWhere('UserCourseCertificate.tenantId = :tenantId', {
+        tenantId: tenantId,
+      });
 
       // Dynamically build query based on filters object
       Object.keys(filters).forEach((key) => {
