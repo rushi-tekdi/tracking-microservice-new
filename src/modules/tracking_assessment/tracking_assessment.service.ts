@@ -848,11 +848,60 @@ export class TrackingAssessmentService {
         }
       });
 
-      // Calculate unlock status
-      for (let i = 2; i <= MAX_LEVELS; i++) {
-        const currentScore = levelMap[`level${i}`].metadata.scorePercentage;
-        const prevScore = levelMap[`level${i - 1}`].metadata.scorePercentage;
-        levelMap[`level${i}`].metadata.isUnlocked = prevScore >= 80 || currentScore >= 80;
+      // Determine if this is a speed game (e.g- letterLauncher, wordDetective)
+      // Speed games use tier-based unlocking and fuel-based completion
+      const courseId = searchFilter?.courseId || (params.length >= 2 ? params[1] : null);
+      const SPEED_GAMES_ENV = this.configService.get<string>('SPEED_GAMES');
+      const SPEED_GAMES = (SPEED_GAMES_ENV && SPEED_GAMES_ENV.trim() !== '') 
+        ? SPEED_GAMES_ENV.split(',').map(g => g.trim()).filter(g => g !== '')
+        : ['letterLauncher', 'wordDetective']; // Safe default
+      
+      const isSpeedGame = !!(courseId && 
+        SPEED_GAMES.some(game => courseId.toString().startsWith(game)));
+
+      // For speed games: Recalculate isCompleted based on fuel thresholds (not 80%)
+      if (isSpeedGame) {
+        for (let i = 1; i <= MAX_LEVELS; i++) {
+          const levelKey = `level${i}`;
+          const totalScore = levelMap[levelKey].highest?.totalScore || 0;
+          
+          // Speed game fuel thresholds -  Level 1-3: 80 points required,Level 4-6: 100 points required,Level 7-10: 120 points required
+          let requiredFuel = 80;
+          if (i >= 4 && i <= 6) requiredFuel = 100;
+          if (i >= 7) requiredFuel = 120;
+          
+          levelMap[levelKey].metadata.isCompleted = totalScore >= requiredFuel;
+        }
+      }
+
+      // Calculate unlock status based on game type
+      if (isSpeedGame) {
+        // Tier-based unlocking for speed games only
+        // Levels 1-3: Always unlocked,Levels 4-6: Unlocked when ALL levels 1-3 are completed,Levels 7-10: Unlocked when ALL levels 4-6 are completed
+        const tier1AllCompleted = levelMap['level1'].metadata.isCompleted && 
+                                  levelMap['level2'].metadata.isCompleted && 
+                                  levelMap['level3'].metadata.isCompleted;
+        const tier2AllCompleted = levelMap['level4'].metadata.isCompleted && 
+                                  levelMap['level5'].metadata.isCompleted && 
+                                  levelMap['level6'].metadata.isCompleted;
+        
+        for (let i = 1; i <= MAX_LEVELS; i++) {
+          if (i <= 3) {
+            levelMap[`level${i}`].metadata.isUnlocked = true;
+          } else if (i <= 6) {
+            levelMap[`level${i}`].metadata.isUnlocked = tier1AllCompleted;
+          } else {
+            levelMap[`level${i}`].metadata.isUnlocked = tier2AllCompleted;
+          }
+        }
+      } else {
+        // EXISTING LOGIC - Sequential unlock for all other games (unchanged)
+        // Calculate unlock status
+        for (let i = 2; i <= MAX_LEVELS; i++) {
+          const currentScore = levelMap[`level${i}`].metadata.scorePercentage;
+          const prevScore = levelMap[`level${i - 1}`].metadata.scorePercentage;
+          levelMap[`level${i}`].metadata.isUnlocked = prevScore >= 80 || currentScore >= 80;
+        }
       }
 
       // Find current level (first unlocked but not completed)
@@ -872,8 +921,7 @@ export class TrackingAssessmentService {
       // Determine if this is a combined game (combinedLetter, combinedWord, combinedSentence)
       // Combined games need filtering with 80% validation
       // Individual games should show ALL levels with any data
-      // Check courseId from searchFilter (params[1] is courseId in SQL query: userId=$1, courseId=$2, unitId=$3)
-      const courseId = searchFilter?.courseId || (params.length >= 2 ? params[1] : null);
+      // courseId already defined above for speed game detection
       const isCombinedGame = courseId && 
         (courseId.toString().startsWith('combinedLetter') || 
          courseId.toString().startsWith('combinedWord') || 
@@ -896,16 +944,25 @@ export class TrackingAssessmentService {
         }
       } else {
         // For individual games: Return ALL levels that have been played (have any data)
-        for (let i = 1; i <= MAX_LEVELS; i++) {
-          const levelKey = `level${i}`;
-          // Return level if it has highest score data OR recent attempt data
-          if (levelMap[levelKey].highest || levelMap[levelKey].recent) {
-            filteredData[levelKey] = levelMap[levelKey];
+        // For speed games: Return ALL levels (needed for lock/unlock display)
+        if (isSpeedGame) {
+          // Speed games need all levels returned for proper lock/unlock UI
+          for (let i = 1; i <= MAX_LEVELS; i++) {
+            filteredData[`level${i}`] = levelMap[`level${i}`];
           }
-        }
-        // Always include level1 even if no data (for first-time users)
-        if (!filteredData['level1']) {
-          filteredData['level1'] = levelMap['level1'];
+        } else {
+          // Other individual games: Only return levels with data
+          for (let i = 1; i <= MAX_LEVELS; i++) {
+            const levelKey = `level${i}`;
+            // Return level if it has highest score data OR recent attempt data
+            if (levelMap[levelKey].highest || levelMap[levelKey].recent) {
+              filteredData[levelKey] = levelMap[levelKey];
+            }
+          }
+          // Always include level1 even if no data (for first-time users)
+          if (!filteredData['level1']) {
+            filteredData['level1'] = levelMap['level1'];
+          }
         }
       }
 
